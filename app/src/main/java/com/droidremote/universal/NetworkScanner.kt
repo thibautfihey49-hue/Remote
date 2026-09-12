@@ -1,27 +1,123 @@
 package com.droidremote.universal
+import android.content.Context
+import android.net.nsd.NsdManager
+import android.net.nsd.NsdServiceInfo
+import android.net.wifi.WifiManager
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.delay
-class NetworkScanner {
+import java.net.InetSocketAddress
+import java.net.Socket
+class NetworkScanner(private val context: Context? = null) {
     private val _devices = MutableStateFlow<List<AndroidDevice>>(emptyList())
     val devices: StateFlow<List<AndroidDevice>> = _devices
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning
-    suspend fun scanNetwork() {
+    private val foundDevices = mutableMapOf<String, AndroidDevice>()
+    private var nsdManager: NsdManager? = null
+
+    suspend fun scanNetwork() = withContext(Dispatchers.IO) {
         _isScanning.value = true
-        delay(1200)
-        _devices.value = listOf(
-            AndroidDevice("1","TV Salon TCL","192.168.1.25",DeviceType.TV,"Android TV 12",100,true,false),
-            AndroidDevice("2","Galaxy Tab S9","192.168.1.32",DeviceType.TABLET,"Android 14",78,true,true),
-            AndroidDevice("3","Mi Box S","192.168.1.41",DeviceType.BOX,"Android TV 11",100),
-            AndroidDevice("4","Chromecast 4K","192.168.1.18",DeviceType.CHROMECAST,"Google TV",100),
-            AndroidDevice("5","Pixel Tablet","192.168.1.55",DeviceType.TABLET,"Android 14",45,true,true),
-            AndroidDevice("6","Galaxy S24","192.168.1.67",DeviceType.PHONE,"Android 14",92,true,true),
-            AndroidDevice("7","Lenovo Tab M11","192.168.1.72",DeviceType.TABLET,"Android 13",60,true,false)
-        )
+        foundDevices.clear()
+        _devices.value = emptyList()
+        val baseIp = getBaseIp()
+        startNsdDiscovery()
+        val jobs = mutableListOf<Job>()
+        for (i in 1..254) {
+            val ip = "$baseIp$i"
+            val job = launch { checkDevice(ip) }
+            jobs.add(job)
+            if (jobs.size >= 40) { jobs.forEach { it.join() }; jobs.clear() }
+        }
+        jobs.forEach { it.join() }
+        delay(2000)
+        stopNsdDiscovery()
+        _devices.value = foundDevices.values.toList().sortedBy { it.ip }
         _isScanning.value = false
     }
+
+    private suspend fun checkDevice(ip: String) {
+        val isOurReceiver = isPortOpen(ip, 8080, 350)
+        val isAdb = isPortOpen(ip, 5555, 350)
+        val isChromecast = isPortOpen(ip, 8009, 350)
+        val isAndroidTv = isPortOpen(ip, 6466, 350) || isPortOpen(ip, 6467, 350)
+        if (isOurReceiver) {
+            addDevice(AndroidDevice(ip, "Tablette DroidRemote $ip", ip, DeviceType.TABLET, "Receiver actif", 100, true, true))
+        } else if (isAdb || isAndroidTv) {
+            addDevice(AndroidDevice(ip, if(isAndroidTv) "Android TV $ip" else "Android ADB $ip", ip, if(isAndroidTv) DeviceType.TV else DeviceType.PHONE, if(isAdb) "ADB 5555" else "TV Remote", 100, true, false))
+        } else if (isChromecast) {
+            addDevice(AndroidDevice(ip, "Chromecast $ip", ip, DeviceType.CHROMECAST, "Cast", 100, true, false))
+        }
+    }
+
+    private fun isPortOpen(ip: String, port: Int, timeout: Int): Boolean {
+        return try { val s = Socket(); s.connect(InetSocketAddress(ip, port), timeout); s.close(); true } catch (e: Exception) { false }
+    }
+
+    private fun getBaseIp(): String {
+        return try {
+            val wm = context?.applicationContext?.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            val ipInt = wm?.connectionInfo?.ipAddress ?: 0
+            val ip = String.format("%d.%d.%d.", ipInt and 0xff, ipInt shr 8 and 0xff, ipInt shr 16 and 0xff)
+            if (ip == "0.0.0.") "192.168.1." else ip
+        } catch (e: Exception) { "192.168.1." }
+    }
+
+    private fun startNsdDiscovery() {
+        try {
+            nsdManager = context?.getSystemService(Context.NSD_SERVICE) as? NsdManager
+            nsdManager?.discoverServices("_googlecast._tcp", NsdManager.PROTOCOL_DNS_SD, discoveryListener)
+            nsdManager?.discoverServices("_androidtvremote2._tcp", NsdManager.PROTOCOL_DNS_SD, discoveryListener)
+        } catch (e: Exception) {}
+    }
+    private fun stopNsdDiscovery() { try { nsdManager?.stopServiceDiscovery(discoveryListener) } catch (e: Exception) {} }
+
+    private val discoveryListener = object : NsdManager.DiscoveryListener {
+        override fun onDiscoveryStarted(regType: String) {}
+        override fun onServiceFound(service: NsdServiceInfo) { nsdManager?.resolveService(service, resolveListener) }
+        override fun onServiceLost(service: NsdServiceInfo) {}
+        override fun onDiscoveryStopped(serviceType: String) {}
+        override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {}
+        override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {}
+    }
+    private val resolveListener = object : NsdManager.ResolveListener {
+        override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {}
+        override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
+            val ip = serviceInfo.host?.hostAddress ?: return
+            val name = serviceInfo.serviceName
+            val type = when {
+                name.contains("Chromecast", true) || serviceInfo.serviceType.contains("googlecast") -> DeviceType.CHROMECAST
+                serviceInfo.serviceType.contains("androidtv") -> DeviceType.TV
+                else -> DeviceType.BOX
+            }
+            addDevice(AndroidDevice(ip, name, ip, type, serviceInfo.serviceType, 100, true, false))
+        }
+    }
+    private fun addDevice(device: AndroidDevice) {
+        if (!foundDevices.containsKey(device.ip)) {
+            foundDevices[device.ip] = device
+            _devices.value = foundDevices.values.toList()
+        }
+    }
     fun sendCommand(device: AndroidDevice, command: String) {
-        println("Send to ${device.name}: $command")
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                if (device.isReceiverInstalled) {
+                    val url = when(command) {
+                        "lock" -> "http://${device.ip}:8080/command?cmd=lock"
+                        "unlock" -> "http://${device.ip}:8080/command?cmd=unlock"
+                        "volup" -> "http://${device.ip}:8080/command?cmd=volup"
+                        "voldown" -> "http://${device.ip}:8080/command?cmd=voldown"
+                        "home" -> "http://${device.ip}:8080/key?code=3"
+                        "back" -> "http://${device.ip}:8080/key?code=4"
+                        else -> if(command.startsWith("input text")) {
+                            val txt = command.removePrefix("input text ").trim()
+                            "http://${device.ip}:8080/text?text=${java.net.URLEncoder.encode(txt, "UTF-8")}"
+                        } else "http://${device.ip}:8080/command?cmd=$command"
+                    }
+                    (java.net.URL(url).openConnection() as java.net.HttpURLConnection).responseCode
+                }
+            } catch (e: Exception) { e.printStackTrace() }
+        }
     }
 }
