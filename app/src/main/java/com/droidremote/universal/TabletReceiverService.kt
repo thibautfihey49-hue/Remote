@@ -9,7 +9,7 @@ class TabletReceiverService : Service() {
         super.onCreate()
         val channel = NotificationChannel("droidremote","DroidRemote",NotificationManager.IMPORTANCE_LOW)
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
-        val notif = NotificationCompat.Builder(this,"droidremote").setContentTitle("DroidRemote Récepteur actif").setContentText("Cette tablette peut être contrôlée").setSmallIcon(android.R.drawable.ic_media_play).build()
+        val notif = NotificationCompat.Builder(this,"droidremote").setContentTitle("DroidRemote Recepteur actif").setContentText("Cette tablette peut etre controlee").setSmallIcon(android.R.drawable.ic_media_play).build()
         startForeground(1,notif)
     }
 }
