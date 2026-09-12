@@ -13,9 +13,4 @@ class RemoteAccessibilityService : AccessibilityService() {
         val gesture = GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, 100)).build()
         dispatchGesture(gesture, null, null)
     }
-    fun swipe(x1: Float, y1: Float, x2: Float, y2: Float) {
-        val path = Path(); path.moveTo(x1, y1); path.lineTo(x2, y2)
-        val gesture = GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, 300)).build()
-        dispatchGesture(gesture, null, null)
-    }
 }

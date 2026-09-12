@@ -11,15 +11,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
+        with: { distribution: 'temurin', java-version: '17' }
       - uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: 8.4
+        with: { gradle-version: 8.4 }
       - run: gradle assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
-        with:
-          name: DroidRemote-REAL-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
-          retention-days: 30
+        with: { name: DroidRemote-REAL-FINAL, path: app/build/outputs/apk/debug/app-debug.apk, retention-days: 30 }

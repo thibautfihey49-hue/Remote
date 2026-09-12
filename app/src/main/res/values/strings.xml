@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">DroidRemote REAL</string>
-    <string name="accessibility_service_description">Permet le controle a distance reel de la tablette</string>
+    <string name="accessibility_service_description">Permet le controle a distance reel de la tablette sans ADB</string>
 </resources>
