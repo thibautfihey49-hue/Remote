@@ -43,7 +43,7 @@ class MainActivity : ComponentActivity() {
                     } else {
                         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
                             Text("DroidRemote REAL", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Color.White)
-                            Text(if(isControllerMode) "Controleur - TV sans ADB + Tablette" else "Recepteur Tablette", color = Color(0xFF3DDC84))
+                            Text("Controleur TV BBox + Tablette", color = Color(0xFF3DDC84))
                             Spacer(modifier = Modifier.height(16.dp))
                             Row(modifier = Modifier.fillMaxWidth().background(Color(0xFF1A2332), RoundedCornerShape(12.dp)).padding(4.dp)) {
                                 FilterChip(selected = isControllerMode, onClick = { isControllerMode = true }, label = { Text("Controleur") }, modifier = Modifier.weight(1f))
@@ -54,33 +54,26 @@ class MainActivity : ComponentActivity() {
                             if (!isControllerMode) {
                                 Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1A2332)), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                                     Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Text("TABLETTE A CONTROLER", color = Color(0xFF8B5CF6), fontWeight = FontWeight.Bold)
+                                        Text("TABLETTE", color = Color(0xFF8B5CF6), fontWeight = FontWeight.Bold)
+                                        Button(onClick = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B5CF6))) { Text("Accessibilite") }
                                         Spacer(modifier = Modifier.height(8.dp))
-                                        Button(onClick = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B5CF6))) { Text("Ouvrir Accessibilite") }
-                                        Spacer(modifier = Modifier.height(12.dp))
-                                        Button(onClick = { val intent = Intent(this@MainActivity, TabletReceiverService::class.java); startForegroundService(intent); receiverRunning = true }, modifier = Modifier.fillMaxWidth().height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = if(receiverRunning) Color.Gray else Color(0xFF3DDC84), contentColor = Color.Black)) { Text(if(receiverRunning) "RECEIVER ACTIF" else "DEMARRER RECEPTEUR", fontWeight = FontWeight.Bold) }
-                                        if(receiverRunning) { Spacer(modifier = Modifier.height(12.dp)); Text("${getIp()}:8080", color = Color(0xFF3DDC84), fontWeight = FontWeight.Bold) }
+                                        Button(onClick = { val i = Intent(this@MainActivity, TabletReceiverService::class.java); startForegroundService(i); receiverRunning = true }, modifier = Modifier.fillMaxWidth().height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = if(receiverRunning) Color.Gray else Color(0xFF3DDC84), contentColor = Color.Black)) { Text(if(receiverRunning) "ACTIF" else "DEMARRER", fontWeight = FontWeight.Bold) }
+                                        if(receiverRunning) Text("${getIp()}:8080", color = Color(0xFF3DDC84), fontWeight = FontWeight.Bold)
                                     }
                                 }
                             } else {
                                 Button(onClick = { scope.launch { scanner.scanNetwork() } }, modifier = Modifier.fillMaxWidth().height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3DDC84), contentColor = Color.Black)) {
-                                    if (isScanning) { CircularProgressIndicator(modifier = Modifier.size(20.dp)); Spacer(modifier = Modifier.width(8.dp)); Text("SCAN ${devices.size}...") }
-                                    else { Icon(Icons.Default.Search, contentDescription = null); Spacer(modifier = Modifier.width(8.dp)); Text("SCANNER VRAI RESEAU", fontWeight = FontWeight.Bold) }
+                                    if (isScanning) { CircularProgressIndicator(modifier = Modifier.size(20.dp)); Text("SCAN ${devices.size}...") }
+                                    else { Icon(Icons.Default.Search, null); Text("SCANNER", fontWeight = FontWeight.Bold) }
                                 }
                                 Spacer(modifier = Modifier.height(16.dp))
                                 LazyColumn {
                                     items(devices) { dev ->
-                                        Card(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).clickable { selected = dev }, colors = CardDefaults.cardColors(containerColor = Color(0xFF1A2332)), shape = RoundedCornerShape(16.dp)) {
+                                        Card(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).clickable { selected = dev }, colors = CardDefaults.cardColors(containerColor = Color(0xFF1A2332))) {
                                             Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                                                Box(modifier = Modifier.size(48.dp).background(if(dev.type==DeviceType.TABLET) Color(0xFF8B5CF6) else Color(0xFF3DDC84), RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
-                                                    Text(if(dev.type==DeviceType.TABLET) "TAB" else "TV", color = Color.Black, fontWeight = FontWeight.Bold)
-                                                }
+                                                Box(modifier = Modifier.size(48.dp).background(if(dev.type==DeviceType.TABLET) Color(0xFF8B5CF6) else Color(0xFF3DDC84), RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) { Text(if(dev.type==DeviceType.TABLET) "TAB" else "TV", fontWeight = FontWeight.Bold) }
                                                 Spacer(modifier = Modifier.width(12.dp))
-                                                Column(modifier = Modifier.weight(1f)) {
-                                                    Text(dev.name, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
-                                                    Text("${dev.type} • ${dev.ip} • SANS ADB", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
-                                                }
-                                                if(dev.isReceiverInstalled) Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF3DDC84))
+                                                Column(modifier = Modifier.weight(1f)) { Text(dev.name, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1); Text("${dev.ip}", color = Color.Gray) }
                                             }
                                         }
                                     }
@@ -105,46 +98,48 @@ class MainActivity : ComponentActivity() {
 fun RemoteDetailScreen(device: AndroidDevice, scanner: NetworkScanner, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val tvClient = remember { TvRemoteClient(device.ip) }
-    var status by remember { mutableStateOf("Pret - API BBox sans PIN") }
+    var status by remember { mutableStateOf("Clique CONNECTER pour afficher PIN sur TV") }
+    var pinVisible by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0A0E14)).padding(16.dp).verticalScroll(rememberScrollState())) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = null, tint = Color.White) }
-            Text(device.name, color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1)
+            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null, tint = Color.White) }
+            Text(device.name, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
         }
-        Text("${device.ip} - ${device.type} SANS ADB", color = Color(0xFF3DDC84))
+        Text(device.ip, color = Color(0xFF3DDC84))
         Spacer(modifier = Modifier.height(12.dp))
-
         if (device.isReceiverInstalled) {
-            Text("Controle REEL tablette", color = Color.White, fontWeight = FontWeight.Bold)
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ActionBtn("Lock") { scanner.sendCommand(device, "lock") }
                 ActionBtn("Home") { scanner.sendCommand(device, "home") }
                 ActionBtn("Back") { scanner.sendCommand(device, "back") }
             }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ActionBtn("Vol +") { scanner.sendCommand(device, "volup") }
-                ActionBtn("Vol -") { scanner.sendCommand(device, "voldown") }
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            var text by remember { mutableStateOf("") }
-            OutlinedTextField(value = text, onValueChange = { text = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Texte a taper sur tablette") })
-            Spacer(modifier = Modifier.height(8.dp))
-            Button(onClick = { scanner.sendCommand(device, "input text $text") }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3DDC84))) { Text("Envoyer texte REEL", color = Color.Black) }
         } else {
-            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1A2332)), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1A2332)), modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("CONTROLE TV BBOX SANS PIN", color = Color(0xFF3DDC84), fontWeight = FontWeight.Bold)
-                    Text(status, color = Color.Gray, style = MaterialTheme.typography.bodySmall)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("Utilise API BBox 192.168.1.254 + Cast - pas de code TV necessaire", color = Color.White, style = MaterialTheme.typography.bodySmall)
+                    Text("BBOX TV SANS ADB", color = Color(0xFF3DDC84), fontWeight = FontWeight.Bold)
+                    Text(status, color = Color.White, style = MaterialTheme.typography.bodySmall)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(onClick = {
+                        scope.launch {
+                            status = "Connexion a ${device.ip}:6466..."
+                            val ok = tvClient.triggerPinAndConnect()
+                            if (ok) {
+                                status = "Regarde ta TV ! Un code PIN doit s'afficher maintenant. Si rien, va dans Parametres > Telecommandes > Ajouter"
+                                pinVisible = true
+                            } else {
+                                status = "Impossible de joindre 6466. Verifie que TV et tel sont sur meme WiFi 2.4GHz"
+                            }
+                        }
+                    }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3DDC84), contentColor = Color.Black)) {
+                        Text("CONNECTER + AFFICHER PIN SUR TV", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
             Text("Telecommande", color = Color.White, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.height(8.dp))
             Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { scope.launch { status = if(tvClient.sendKey("UP")) "UP OK" else "UP echec"; } }, modifier = Modifier.size(80.dp, 48.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A2332))) { Text("HAUT") }
+                Button(onClick = { scope.launch { val ok = tvClient.sendKey("UP"); status = if(ok) "UP envoye" else "UP echec" } }, modifier = Modifier.size(80.dp, 48.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A2332))) { Text("HAUT") }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { scope.launch { tvClient.sendKey("LEFT") } }, modifier = Modifier.size(80.dp, 48.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A2332))) { Text("GAUCHE") }
                     Button(onClick = { scope.launch { tvClient.sendKey("OK") } }, modifier = Modifier.size(80.dp, 48.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3DDC84), contentColor = Color.Black)) { Text("OK") }
@@ -160,7 +155,7 @@ fun RemoteDetailScreen(device: AndroidDevice, scanner: NetworkScanner, onBack: (
                 ActionBtn("Vol -") { scope.launch { tvClient.sendKey("VOL_DOWN") } }
             }
             Spacer(modifier = Modifier.height(12.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { scope.launch { tvClient.launchApp("YouTube") } }, colors = ButtonDefaults.buttonColors(containerColor = Color.Red)) { Text("YouTube") }
                 Button(onClick = { scope.launch { tvClient.launchApp("Netflix") } }, colors = ButtonDefaults.buttonColors(containerColor = Color.Black)) { Text("Netflix") }
             }

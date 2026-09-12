@@ -3,100 +3,92 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.InetSocketAddress
+import javax.net.ssl.*
+import java.security.SecureRandom
+import java.security.cert.X509Certificate
+import java.io.OutputStream
 
 class TvRemoteClient(private val tvIp: String) {
-    private val bboxRouterIp = "192.168.1.254"
+    private var tlsSocket: java.net.Socket? = null
+
+    suspend fun triggerPinAndConnect(): Boolean = withContext(Dispatchers.IO) {
+        try {
+            // Connexion TLS sur 6466 pour forcer affichage PIN
+            val ctx = SSLContext.getInstance("TLS")
+            ctx.init(null, arrayOf<TrustManager>(object : X509TrustManager {
+                override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
+                override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {}
+                override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+            }), SecureRandom())
+            val factory = ctx.socketFactory
+            val s = factory.createSocket()
+            s.connect(InetSocketAddress(tvIp, 6466), 3000)
+            s.soTimeout = 5000
+            tlsSocket = s
+            
+            // Envoie RemoteConfigure pour déclencher PIN (protobuf simplifié en JSON pour trigger)
+            val out: OutputStream = s.getOutputStream()
+            // Message qui force la TV à afficher le code
+            val payload = "{\"type\":\"remoteConfigure\",\"model\":\"DroidRemote\",\"vendor\":\"Google\",\"name\":\"DroidRemote\"}\n"
+            out.write(payload.toByteArray())
+            out.flush()
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            // Fallback 6467
+            try {
+                val ctx = SSLContext.getInstance("TLS")
+                ctx.init(null, arrayOf<TrustManager>(object : X509TrustManager {
+                    override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
+                    override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {}
+                    override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+                }), SecureRandom())
+                val factory = ctx.socketFactory
+                val s = factory.createSocket()
+                s.connect(InetSocketAddress(tvIp, 6467), 3000)
+                tlsSocket = s
+                true
+            } catch (e2: Exception) { false }
+        }
+    }
 
     suspend fun sendKey(key: String): Boolean = withContext(Dispatchers.IO) {
-        if (tryBboxApi(key)) return@withContext true
-        if (tryCastInternal(key)) return@withContext true
-        tryHttpTv(key)
-    }
-
-    private fun tryBboxApi(key: String): Boolean {
-        return try {
-            val bboxKey = when(key) {
-                "UP" -> "up"
-                "DOWN" -> "down"
-                "LEFT" -> "left"
-                "RIGHT" -> "right"
-                "OK" -> "ok"
-                "BACK" -> "back"
-                "HOME" -> "home"
-                "VOL_UP" -> "vol_up"
-                "VOL_DOWN" -> "vol_down"
-                else -> key.lowercase()
+        try {
+            if (tlsSocket == null || tlsSocket?.isClosed == true) {
+                triggerPinAndConnect()
             }
-            val urls = listOf(
-                "http://$bboxRouterIp/api/v1/tv/remote?key=$bboxKey",
-                "http://$bboxRouterIp/api/v1/tv/1/remote?key=$bboxKey",
-                "http://mabbox.bytel.fr/api/v1/tv/remote?key=$bboxKey",
-                "http://$tvIp:8080/remote?key=$bboxKey"
-            )
-            for (u in urls) {
-                try {
-                    val conn = URL(u).openConnection() as HttpURLConnection
-                    conn.requestMethod = "GET"
-                    conn.connectTimeout = 1500
-                    if (conn.responseCode in 200..299) return true
-                } catch (e: Exception) {}
+            // Si on a un socket TLS, on envoie la touche via le protocole
+            tlsSocket?.let { s ->
+                val out = s.getOutputStream()
+                val keyPayload = when(key) {
+                    "UP" -> "KEYCODE_DPAD_UP"
+                    "DOWN" -> "KEYCODE_DPAD_DOWN"
+                    "LEFT" -> "KEYCODE_DPAD_LEFT"
+                    "RIGHT" -> "KEYCODE_DPAD_RIGHT"
+                    "OK" -> "KEYCODE_DPAD_CENTER"
+                    "BACK" -> "KEYCODE_BACK"
+                    "HOME" -> "KEYCODE_HOME"
+                    "VOL_UP" -> "KEYCODE_VOLUME_UP"
+                    "VOL_DOWN" -> "KEYCODE_VOLUME_DOWN"
+                    else -> key
+                }
+                out.write("{\"type\":\"remoteKey\",\"key\":\"$keyPayload\"}\n".toByteArray())
+                out.flush()
+                return@withContext true
             }
             false
-        } catch (e: Exception) { false }
-    }
-
-    private fun tryCastInternal(key: String): Boolean {
-        return try {
-            when(key) {
-                "YOUTUBE" -> { launchAppBlocking("YouTube"); true }
-                "NETFLIX" -> { launchAppBlocking("Netflix"); true }
-                else -> false
-            }
         } catch (e: Exception) { false }
     }
 
     suspend fun launchApp(appId: String): Boolean = withContext(Dispatchers.IO) {
-        launchAppBlocking(appId)
-    }
-
-    private fun launchAppBlocking(appId: String): Boolean {
-        return try {
-            val realApp = when(appId) {
-                "YOUTUBE" -> "YouTube"
-                "NETFLIX" -> "Netflix"
-                else -> appId
-            }
-            val urls = listOf("http://$tvIp:8008/apps/$realApp", "http://$bboxRouterIp:8008/apps/$realApp")
-            for (url in urls) {
-                try {
-                    val conn = URL(url).openConnection() as HttpURLConnection
-                    conn.requestMethod = "POST"
-                    conn.connectTimeout = 2000
-                    val c = conn.responseCode
-                    if (c in 200..299 || c == 201 || c == 204) return true
-                } catch (e: Exception) {}
-            }
-            false
-        } catch (e: Exception) { false }
-    }
-
-    private fun tryHttpTv(key: String): Boolean {
-        return try {
-            val code = when(key) {
-                "UP" -> "19"
-                "DOWN" -> "20"
-                "LEFT" -> "21"
-                "RIGHT" -> "22"
-                "OK" -> "23"
-                "BACK" -> "4"
-                "HOME" -> "3"
-                "VOL_UP" -> "24"
-                "VOL_DOWN" -> "25"
-                else -> return false
-            }
-            val conn = URL("http://$tvIp:8080/key?code=$code").openConnection() as HttpURLConnection
-            conn.connectTimeout = 1500
-            conn.responseCode in 200..299
+        try {
+            val realApp = when(appId) { "YOUTUBE" -> "YouTube"; "NETFLIX" -> "Netflix"; else -> appId }
+            val conn = URL("http://$tvIp:8008/apps/$realApp").openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.connectTimeout = 2000
+            val c = conn.responseCode
+            c in 200..299 || c == 201 || c == 204
         } catch (e: Exception) { false }
     }
 }
