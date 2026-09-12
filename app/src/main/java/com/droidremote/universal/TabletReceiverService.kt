@@ -12,8 +12,13 @@ class TabletReceiverService : Service() {
         super.onCreate()
         val channel = NotificationChannel("droidremote","DroidRemote REAL",NotificationManager.IMPORTANCE_LOW)
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
-        val notif = NotificationCompat.Builder(this,"droidremote").setContentTitle("DroidRemote REEL actif").setContentText("Controle sur ${getIp()}:8080").setSmallIcon(android.R.drawable.ic_media_play).build()
-        startForeground(1,notif)
+        val notif = NotificationCompat.Builder(this,"droidremote")
+            .setContentTitle("DroidRemote REEL actif")
+            .setContentText("Controle sur ${getIp()}:8080")
+            .setSmallIcon(android.R.drawable.ic_media_play)
+            .build()
+        // FIX: pas de type mediaProjection, juste startForeground normal pour Android 14
+        startForeground(1, notif)
         server = RealReceiverServer(this, 8080)
         try { server?.start() } catch (e: Exception) { e.printStackTrace() }
     }
