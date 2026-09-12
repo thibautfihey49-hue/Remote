@@ -2,8 +2,15 @@ plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }
 android {
     namespace 'com.droidremote.universal'
     compileSdk 34
-    defaultConfig { applicationId "com.droidremote.universal"; minSdk 24; targetSdk 34; versionCode 12; versionName "4.0-FINAL-NO-ADB" }
-    buildTypes { debug { minifyEnabled false } release { minifyEnabled false } }
+    defaultConfig { applicationId "com.droidremote.universal"; minSdk 24; targetSdk 34; versionCode 13; versionName "4.1-FIX-BUILD" }
+    buildTypes {
+        debug {
+            minifyEnabled false
+        }
+        release {
+            minifyEnabled false
+        }
+    }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = '17' }
     buildFeatures { compose true }
