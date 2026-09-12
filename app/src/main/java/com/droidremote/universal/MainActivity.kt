@@ -67,8 +67,6 @@ class MainActivity : ComponentActivity() {
                                     if (isScanning) { CircularProgressIndicator(modifier = Modifier.size(20.dp)); Spacer(modifier = Modifier.width(8.dp)); Text("SCAN ${devices.size}...") }
                                     else { Icon(Icons.Default.Search, contentDescription = null); Spacer(modifier = Modifier.width(8.dp)); Text("SCANNER VRAI RESEAU", fontWeight = FontWeight.Bold) }
                                 }
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text("TV BBox = 6466 sans ADB • Tablette = 8080", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
                                 Spacer(modifier = Modifier.height(16.dp))
                                 LazyColumn {
                                     items(devices) { dev ->
@@ -106,10 +104,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun RemoteDetailScreen(device: AndroidDevice, scanner: NetworkScanner, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
-    var tvClient by remember { mutableStateOf(TvRemoteClient(device.ip)) }
-    var pin by remember { mutableStateOf("") }
-    var connected by remember { mutableStateOf(false) }
-    var status by remember { mutableStateOf("Non connecte") }
+    val tvClient = remember { TvRemoteClient(device.ip) }
+    var status by remember { mutableStateOf("Pret - API BBox sans PIN") }
 
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0A0E14)).padding(16.dp).verticalScroll(rememberScrollState())) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -136,35 +132,19 @@ fun RemoteDetailScreen(device: AndroidDevice, scanner: NetworkScanner, onBack: (
             Spacer(modifier = Modifier.height(8.dp))
             Button(onClick = { scanner.sendCommand(device, "input text $text") }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3DDC84))) { Text("Envoyer texte REEL", color = Color.Black) }
         } else {
-            // TV BBOX SANS ADB
             Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1A2332)), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("CONTROLE TV BBOX SANS ADB", color = Color(0xFF3DDC84), fontWeight = FontWeight.Bold)
+                    Text("CONTROLE TV BBOX SANS PIN", color = Color(0xFF3DDC84), fontWeight = FontWeight.Bold)
+                    Text(status, color = Color.Gray, style = MaterialTheme.typography.bodySmall)
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("1. Sur ta BBox TV, un code PIN va s'afficher quand tu cliques Connecter", color = Color.White, style = MaterialTheme.typography.bodySmall)
-                    Text("2. Tape le PIN ici", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedTextField(value = pin, onValueChange = { pin = it }, placeholder = { Text("PIN 6 chiffres") }, modifier = Modifier.weight(1f))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(onClick = {
-                            scope.launch {
-                                status = "Connexion a ${device.ip}:6466..."
-                                val ok = tvClient.connect()
-                                connected = ok
-                                status = if(ok) "Connecte! PIN=${pin} valide" else "Echec connexion"
-                            }
-                        }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3DDC84))) { Text("Connecter", color = Color.Black) }
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(status, color = if(connected) Color(0xFF3DDC84) else Color.Gray, style = MaterialTheme.typography.bodySmall)
+                    Text("Utilise API BBox 192.168.1.254 + Cast - pas de code TV necessaire", color = Color.White, style = MaterialTheme.typography.bodySmall)
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
             Text("Telecommande", color = Color.White, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(8.dp))
             Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { scope.launch { tvClient.sendKey("UP") } }, modifier = Modifier.size(80.dp, 48.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A2332))) { Text("HAUT") }
+                Button(onClick = { scope.launch { status = if(tvClient.sendKey("UP")) "UP OK" else "UP echec"; } }, modifier = Modifier.size(80.dp, 48.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A2332))) { Text("HAUT") }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { scope.launch { tvClient.sendKey("LEFT") } }, modifier = Modifier.size(80.dp, 48.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A2332))) { Text("GAUCHE") }
                     Button(onClick = { scope.launch { tvClient.sendKey("OK") } }, modifier = Modifier.size(80.dp, 48.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3DDC84), contentColor = Color.Black)) { Text("OK") }
@@ -180,11 +160,9 @@ fun RemoteDetailScreen(device: AndroidDevice, scanner: NetworkScanner, onBack: (
                 ActionBtn("Vol -") { scope.launch { tvClient.sendKey("VOL_DOWN") } }
             }
             Spacer(modifier = Modifier.height(12.dp))
-            Text("Apps", color = Color.White, fontWeight = FontWeight.Bold)
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { scope.launch { tvClient.launchApp("YouTube") } }, colors = ButtonDefaults.buttonColors(containerColor = Color.Red)) { Text("YouTube") }
                 Button(onClick = { scope.launch { tvClient.launchApp("Netflix") } }, colors = ButtonDefaults.buttonColors(containerColor = Color.Black)) { Text("Netflix") }
-                Button(onClick = { scope.launch { tvClient.launchApp("com.google.android.youtube.tv") } }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A2332))) { Text("Molotov") }
             }
         }
     }
