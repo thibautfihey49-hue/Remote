@@ -27,7 +27,7 @@ class NetworkScanner(private val context: Context? = null) {
             val ip = "$baseIp$i"
             val job = launch { checkDevice(ip) }
             jobs.add(job)
-            if (jobs.size >= 40) { jobs.forEach { it.join() }; jobs.clear() }
+            if (jobs.size >= 50) { jobs.forEach { it.join() }; jobs.clear() }
         }
         jobs.forEach { it.join() }
         delay(2000)
@@ -37,23 +37,21 @@ class NetworkScanner(private val context: Context? = null) {
     }
 
     private suspend fun checkDevice(ip: String) {
-        val isOurReceiver = isPortOpen(ip, 8080, 350)
-        val isAdb = isPortOpen(ip, 5555, 350)
-        val isChromecast = isPortOpen(ip, 8009, 350)
-        val isAndroidTv = isPortOpen(ip, 6466, 350) || isPortOpen(ip, 6467, 350)
+        val isOurReceiver = isPortOpen(ip, 8080, 300)
+        val isChromecast = isPortOpen(ip, 8009, 300) || isPortOpen(ip, 8008, 300)
+        val isAndroidTvRemote = isPortOpen(ip, 6466, 300) || isPortOpen(ip, 6467, 300)
         if (isOurReceiver) {
-            addDevice(AndroidDevice(ip, "Tablette DroidRemote $ip", ip, DeviceType.TABLET, "Receiver actif", 100, true, true))
-        } else if (isAdb || isAndroidTv) {
-            addDevice(AndroidDevice(ip, if(isAndroidTv) "Android TV $ip" else "Android ADB $ip", ip, if(isAndroidTv) DeviceType.TV else DeviceType.PHONE, if(isAdb) "ADB 5555" else "TV Remote", 100, true, false))
+            addDevice(AndroidDevice(ip, "Tablette DroidRemote $ip", ip, DeviceType.TABLET, "Receiver 8080 - SANS ADB", 100, true, true))
+        } else if (isAndroidTvRemote) {
+            addDevice(AndroidDevice(ip, "Android TV Remote $ip", ip, DeviceType.TV, "Port 6466 - SANS ADB", 100, true, false))
         } else if (isChromecast) {
-            addDevice(AndroidDevice(ip, "Chromecast $ip", ip, DeviceType.CHROMECAST, "Cast", 100, true, false))
+            addDevice(AndroidDevice(ip, "BBoxTV / Chromecast $ip", ip, DeviceType.CHROMECAST, "Cast + Remote SANS ADB", 100, true, false))
         }
     }
 
     private fun isPortOpen(ip: String, port: Int, timeout: Int): Boolean {
         return try { val s = Socket(); s.connect(InetSocketAddress(ip, port), timeout); s.close(); true } catch (e: Exception) { false }
     }
-
     private fun getBaseIp(): String {
         return try {
             val wm = context?.applicationContext?.getSystemService(Context.WIFI_SERVICE) as? WifiManager
@@ -62,7 +60,6 @@ class NetworkScanner(private val context: Context? = null) {
             if (ip == "0.0.0.") "192.168.1." else ip
         } catch (e: Exception) { "192.168.1." }
     }
-
     private fun startNsdDiscovery() {
         try {
             nsdManager = context?.getSystemService(Context.NSD_SERVICE) as? NsdManager
@@ -71,7 +68,6 @@ class NetworkScanner(private val context: Context? = null) {
         } catch (e: Exception) {}
     }
     private fun stopNsdDiscovery() { try { nsdManager?.stopServiceDiscovery(discoveryListener) } catch (e: Exception) {} }
-
     private val discoveryListener = object : NsdManager.DiscoveryListener {
         override fun onDiscoveryStarted(regType: String) {}
         override fun onServiceFound(service: NsdServiceInfo) { nsdManager?.resolveService(service, resolveListener) }
@@ -90,7 +86,7 @@ class NetworkScanner(private val context: Context? = null) {
                 serviceInfo.serviceType.contains("androidtv") -> DeviceType.TV
                 else -> DeviceType.BOX
             }
-            addDevice(AndroidDevice(ip, name, ip, type, serviceInfo.serviceType, 100, true, false))
+            addDevice(AndroidDevice(ip, name, ip, type, "mDNS SANS ADB", 100, true, false))
         }
     }
     private fun addDevice(device: AndroidDevice) {
@@ -103,19 +99,25 @@ class NetworkScanner(private val context: Context? = null) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 if (device.isReceiverInstalled) {
-                    val url = when(command) {
-                        "lock" -> "http://${device.ip}:8080/command?cmd=lock"
-                        "unlock" -> "http://${device.ip}:8080/command?cmd=unlock"
-                        "volup" -> "http://${device.ip}:8080/command?cmd=volup"
-                        "voldown" -> "http://${device.ip}:8080/command?cmd=voldown"
-                        "home" -> "http://${device.ip}:8080/key?code=3"
-                        "back" -> "http://${device.ip}:8080/key?code=4"
-                        else -> if(command.startsWith("input text")) {
-                            val txt = command.removePrefix("input text ").trim()
-                            "http://${device.ip}:8080/text?text=${java.net.URLEncoder.encode(txt, "UTF-8")}"
-                        } else "http://${device.ip}:8080/command?cmd=$command"
-                    }
+                    val url = if(command.startsWith("input text")) {
+                        val txt = command.removePrefix("input text ").trim()
+                        "http://${device.ip}:8080/text?text=${java.net.URLEncoder.encode(txt, "UTF-8")}"
+                    } else "http://${device.ip}:8080/command?cmd=$command"
                     (java.net.URL(url).openConnection() as java.net.HttpURLConnection).responseCode
+                } else {
+                    // TV sans ADB - via TvRemoteClient
+                    val client = TvRemoteClient(device.ip)
+                    when(command) {
+                        "up" -> client.sendKey("DPAD_UP")
+                        "down" -> client.sendKey("DPAD_DOWN")
+                        "left" -> client.sendKey("DPAD_LEFT")
+                        "right" -> client.sendKey("DPAD_RIGHT")
+                        "ok" -> client.sendKey("DPAD_CENTER")
+                        "home" -> client.sendKey("HOME")
+                        "back" -> client.sendKey("BACK")
+                        "youtube" -> client.launchApp("youtube")
+                        "netflix" -> client.launchApp("netflix")
+                    }
                 }
             } catch (e: Exception) { e.printStackTrace() }
         }
